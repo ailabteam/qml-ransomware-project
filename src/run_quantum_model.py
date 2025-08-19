@@ -62,11 +62,16 @@ def main():
     start_time = time.time()
     
     # --- 1. SETUP ---
-    print("--- Quantum Model Pipeline ---")
+    # ***************************************************************
+    # ***               CONFIGURATION PARAMETERS                  ***
+    # ***************************************************************
+    NUM_QUBITS = 12     # INCREASED: More qubits to capture more variance
+    MAX_ITER = 80       # DECREASED: To balance the longer computation time per iteration
+    # ***************************************************************
+
+    print(f"--- Quantum Model Pipeline: {NUM_QUBITS}-Qubit Configuration ---")
     DATA_PATH = 'data/ransomware_features.csv'
     RESULTS_PATH = 'results'
-    NUM_QUBITS = 8  # Number of features after PCA = number of qubits
-    MAX_ITER = 100  # Max iterations for the optimizer
 
     os.makedirs(RESULTS_PATH, exist_ok=True)
     
@@ -79,74 +84,77 @@ def main():
     # --- 3. DEFINE THE VQC MODEL ---
     print("\n--- Defining the VQC Model ---")
     
-    # A. Feature Map: Encodes classical data into quantum states.
-    # ZZFeatureMap is a common choice for VQC.
     feature_map = ZZFeatureMap(feature_dimension=NUM_QUBITS, reps=1)
-    
-    # B. Ansatz: The parameterized quantum circuit that is trained.
-    # RealAmplitudes is a hardware-efficient ansatz.
-    ansatz = RealAmplitudes(num_qubits=NUM_QUBITS, reps=3) # reps is the number of layers
-    
-    # C. Optimizer: The classical algorithm that updates the ansatz parameters.
+    ansatz = RealAmplitudes(num_qubits=NUM_QUBITS, reps=3)
     optimizer = COBYLA(maxiter=MAX_ITER)
-    
-    # D. Sampler: The backend primitive to run the circuits.
     sampler = Sampler()
 
-    # Callback function to store intermediate results
+    # Callback function to monitor training progress
     objective_func_vals = []
     def callback_graph(weights, obj_func_eval):
         objective_func_vals.append(obj_func_eval)
-        print(f"Iteration {len(objective_func_vals)}: Cost = {obj_func_eval:.4f}", end='\r')
+        print(f"Iteration {len(objective_func_vals)}/{MAX_ITER}: Cost = {obj_func_eval:.4f}", end='\r')
 
-    # E. Combine everything into the VQC model
+    # Define initial point for ansatz parameters for reproducibility
+    initial_point = np.random.default_rng(seed).random(ansatz.num_parameters)
+
     vqc = VQC(
         feature_map=feature_map,
         ansatz=ansatz,
         optimizer=optimizer,
         callback=callback_graph,
         sampler=sampler,
+        initial_point=initial_point
     )
     print("VQC model defined successfully.")
 
     # --- 4. TRAIN THE MODEL ---
-    print(f"\n--- Training the VQC model for {MAX_ITER} iterations... ---")
+    print(f"\n--- Training the VQC model for up to {MAX_ITER} iterations... ---")
+    print("(This will take a significant amount of time, please be patient)")
     training_start_time = time.time()
-
-    # For reproducibility, we need to clear previous weights if the script is run multiple times
-    vqc.initial_point = None 
     
     vqc.fit(X_train, y_train)
 
     training_end_time = time.time()
+    # A newline character is needed because the callback uses \r
     print(f"\nTraining finished in {training_end_time - training_start_time:.2f} seconds.")
 
     # --- 5. EVALUATE THE MODEL ---
     print("\n--- Evaluating the trained VQC model on the test set ---")
     y_pred = vqc.predict(X_test)
-    y_proba = vqc.predict_proba(X_test)[:, 1]
+    
+    # Handle the case where the model might only predict one class
+    if len(np.unique(y_pred)) == 1:
+        print("Warning: The model is predicting only one class. AUC score cannot be computed.")
+        y_proba = np.zeros(len(y_test)) # Dummy probabilities
+    else:
+        y_proba = vqc.predict_proba(X_test)[:, 1]
 
     # --- 6. SAVE AND DISPLAY RESULTS ---
     print("\n--- VQC Model Performance ---")
+    auc_score = roc_auc_score(y_test, y_proba) if len(np.unique(y_pred)) > 1 else 0.0
+    
     results = {
-        'Model': 'Hybrid VQC',
+        'Model': f'Hybrid VQC ({NUM_QUBITS}-qubit)',
         'Num Qubits': NUM_QUBITS,
         'Optimizer': 'COBYLA',
         'Max Iterations': MAX_ITER,
         'Explained Variance (%)': round(explained_variance, 2),
         'Accuracy (%)': round(accuracy_score(y_test, y_pred) * 100, 2),
-        'Precision (%)': round(precision_score(y_test, y_pred) * 100, 2),
-        'Recall (%)': round(recall_score(y_test, y_pred) * 100, 2),
-        'F1-Score (%)': round(f1_score(y_test, y_pred) * 100, 2),
-        'AUC': round(roc_auc_score(y_test, y_proba), 4)
+        'Precision (%)': round(precision_score(y_test, y_pred, zero_division=0) * 100, 2),
+        'Recall (%)': round(recall_score(y_test, y_pred, zero_division=0) * 100, 2),
+        'F1-Score (%)': round(f1_score(y_test, y_pred, zero_division=0) * 100, 2),
+        'AUC': round(auc_score, 4)
     }
 
     # Print results to console
+    print("---------------------------------")
     for key, value in results.items():
-        print(f"{key}: {value}")
+        print(f"{key:<25}: {value}")
+    print("---------------------------------")
         
     # Save results to a JSON file
-    results_json_path = os.path.join(RESULTS_PATH, 'quantum_model_performance.json')
+    results_json_path = os.path.join(RESULTS_PATH, f'quantum_model_performance_{NUM_QUBITS}qubits.json')
     with open(results_json_path, 'w') as f:
         json.dump(results, f, indent=4)
     print(f"\nQuantum model results saved to {results_json_path}")

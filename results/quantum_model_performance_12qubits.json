@@ -1,0 +1,12 @@
+{
+    "Model": "Hybrid VQC (12-qubit)",
+    "Num Qubits": 12,
+    "Optimizer": "COBYLA",
+    "Max Iterations": 80,
+    "Explained Variance (%)": 35.5,
+    "Accuracy (%)": 51.74,
+    "Precision (%)": 73.36,
+    "Recall (%)": 55.06,
+    "F1-Score (%)": 62.91,
+    "AUC": 0.5374
+}
