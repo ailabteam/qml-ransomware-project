@@ -65,8 +65,8 @@ def main():
     # ***************************************************************
     # ***               CONFIGURATION PARAMETERS                  ***
     # ***************************************************************
-    NUM_QUBITS = 12     # INCREASED: More qubits to capture more variance
-    MAX_ITER = 80       # DECREASED: To balance the longer computation time per iteration
+    NUM_QUBITS = 4     # INCREASED: More qubits to capture more variance
+    MAX_ITER = 100       # DECREASED: To balance the longer computation time per iteration
     # ***************************************************************
 
     print(f"--- Quantum Model Pipeline: {NUM_QUBITS}-Qubit Configuration ---")
